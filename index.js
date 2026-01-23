@@ -32,51 +32,76 @@ const { chromium } = require('playwright')
   await abaSemAtribuir.first().click({ force: true })
   console.log('🟡 Clique realizado em "Sem atribuir"')
 
-  // 🔥 ESPERA INTELIGENTE (loader sumir)
   console.log('⏳ Aguardando tela estabilizar...')
   await page.waitForTimeout(3000)
 
-  // Agora apenas LEMOS o que existir
-  const tickets = await page.$$('.card-body')
+  // ✅ CAPTURA O CARD INTEIRO (BODY + FOOTER)
+  const tickets = await page.$$('.card')
   console.log(`🎫 Chamados encontrados: ${tickets.length}`)
 
+  let totalChamados = 0
   let cameras = 0
   let outros = 0
 
   for (const ticket of tickets) {
-    const titulo = await ticket.$('.item-title')
-    const breadcrumb = await ticket.$('.card-breadcrumb-text')
+    totalChamados++
 
-    const tituloTexto = titulo
-      ? (await titulo.innerText()).trim()
+    // 🔹 NÚMERO DO CHAMADO (FORMA CORRETA)
+    let numeroChamado = 'Número não encontrado'
+    let urlChamado = ''
+
+    const linkChamado = await ticket.$(
+      'a[href*="/requests/show/index/id/"]'
+    )
+
+    if (linkChamado) {
+      const href = await linkChamado.getAttribute('href')
+      const match = href.match(/id\/(\d+)/)
+
+      if (match) {
+        numeroChamado = `#${match[1]}`
+        urlChamado = `https://rochalog.sd.cloud.invgate.net${href}`
+      }
+    }
+
+    // 🔹 TÍTULO
+    const tituloEl = await ticket.$('.item-title')
+    const tituloTexto = tituloEl
+      ? (await tituloEl.innerText()).trim()
       : 'Sem título'
 
-    const breadcrumbTexto = breadcrumb
-      ? (await breadcrumb.innerText())
+    // 🔹 CATEGORIA
+    const breadcrumbEl = await ticket.$('.card-breadcrumb-text')
+    const breadcrumbTexto = breadcrumbEl
+      ? (await breadcrumbEl.innerText())
           .toUpperCase()
           .replace(/\s+/g, '')
       : ''
 
+    // 🔹 REGRA CFTV
     const isCamera = breadcrumbTexto.includes(
       'CONTROLEDEACESSO&CFTV»CFTV»CAMERAS'
     )
 
-    if (!isCamera) {
+    if (isCamera) {
+      cameras++
+    } else {
       outros++
-      continue
     }
 
-    cameras++
-
-    console.log('🟢 CÂMERA')
+    // 🔹 LOG
+    console.log('==========================')
+    console.log('🆔 Chamado:', numeroChamado)
+    console.log('🔗 URL:', urlChamado)
     console.log('📌 Título:', tituloTexto)
-    console.log('🧭 Categoria:', breadcrumbTexto)
-    console.log('--------------------------')
+    console.log('🧭 Categoria:', breadcrumbTexto || 'Sem categoria')
+    console.log('📂 Tipo:', isCamera ? 'CÂMERA (CFTV)' : 'OUTROS')
   }
 
   console.log('==========================')
+  console.log(`📊 Total de chamados lidos: ${totalChamados}`)
   console.log(`📷 Total CÂMERAS: ${cameras}`)
-  console.log(`🔵 Outros ignorados: ${outros}`)
+  console.log(`🔵 Outros chamados: ${outros}`)
   console.log('==========================')
 
   console.log('🛑 Script finalizado. Navegador aberto por 60s.')
