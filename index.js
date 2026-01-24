@@ -1,111 +1,59 @@
-const { chromium } = require('playwright')
+const { launchBrowser } = require('./src/browser/launchBrowser')
+const { MyWorkPage } = require('./src/pages/myWork.page')
+const { extractTicketData } = require('./src/services/ticket.service')
+const { isCftv } = require('./src/rules/cftv.rule')
+const { logTicket } = require('./src/utils/logger')
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: false })
-  const page = await browser.newPage()
+  // 1️⃣ Lança o navegador
+  const { browser, page } = await launchBrowser()
+  const myWork = new MyWorkPage(page)
 
+  // 2️⃣ Abre a página MyWork
   console.log('🌐 Abrindo InvGate...')
-  await page.goto('https://rochalog.sd.cloud.invgate.net/mywork', {
-    waitUntil: 'domcontentloaded',
-  })
+  await myWork.open()
 
+  // 3️⃣ Aguarda login manual
   console.log('➡️ Faça o login manualmente...')
-  console.log('⏳ Aguardando login...')
+  await myWork.waitLogin()
 
-  await page.waitForSelector('div.section-head-tab-content', { timeout: 0 })
-  console.log('✅ Login detectado')
+  // 4️⃣ Abre a aba "Sem atribuir" e espera pelo primeiro card
+  await myWork.openUnassignedTab()
 
-  await page.waitForTimeout(1500)
+  // 5️⃣ Scroll até carregar todos os chamados (lazy load)
+  await myWork.scrollToLoadAllCards()
 
-  console.log('🔍 Procurando aba "Sem atribuir"...')
-
-  const abaSemAtribuir = page.locator(
-    'div.section-head-tab-content:has-text("Sem atribuir")'
-  )
-
-  if ((await abaSemAtribuir.count()) === 0) {
-    console.log('❌ Aba "Sem atribuir" não encontrada.')
-    await browser.close()
-    return
-  }
-
-  await abaSemAtribuir.first().click({ force: true })
-  console.log('🟡 Clique realizado em "Sem atribuir"')
-
-  console.log('⏳ Aguardando tela estabilizar...')
-  await page.waitForTimeout(3000)
-
-  // ✅ CAPTURA O CARD INTEIRO (BODY + FOOTER)
-  const tickets = await page.$$('.card')
+  // 6️⃣ Captura todos os tickets visíveis
+  const tickets = await myWork.getTickets()
   console.log(`🎫 Chamados encontrados: ${tickets.length}`)
 
-  let totalChamados = 0
+  // 7️⃣ Processa cada ticket
   let cameras = 0
   let outros = 0
 
-  for (const ticket of tickets) {
-    totalChamados++
+  for (const ticketEl of tickets) {
+    const ticket = await extractTicketData(ticketEl)
+    const camera = isCftv(ticket.breadcrumb)
 
-    // 🔹 NÚMERO DO CHAMADO (FORMA CORRETA)
-    let numeroChamado = 'Número não encontrado'
-    let urlChamado = ''
-
-    const linkChamado = await ticket.$(
-      'a[href*="/requests/show/index/id/"]'
-    )
-
-    if (linkChamado) {
-      const href = await linkChamado.getAttribute('href')
-      const match = href.match(/id\/(\d+)/)
-
-      if (match) {
-        numeroChamado = `#${match[1]}`
-        urlChamado = `https://rochalog.sd.cloud.invgate.net${href}`
-      }
-    }
-
-    // 🔹 TÍTULO
-    const tituloEl = await ticket.$('.item-title')
-    const tituloTexto = tituloEl
-      ? (await tituloEl.innerText()).trim()
-      : 'Sem título'
-
-    // 🔹 CATEGORIA
-    const breadcrumbEl = await ticket.$('.card-breadcrumb-text')
-    const breadcrumbTexto = breadcrumbEl
-      ? (await breadcrumbEl.innerText())
-          .toUpperCase()
-          .replace(/\s+/g, '')
-      : ''
-
-    // 🔹 REGRA CFTV
-    const isCamera = breadcrumbTexto.includes(
-      'CONTROLEDEACESSO&CFTV»CFTV»CAMERAS'
-    )
-
-    if (isCamera) {
+    if (camera) {
       cameras++
     } else {
       outros++
     }
 
-    // 🔹 LOG
-    console.log('==========================')
-    console.log('🆔 Chamado:', numeroChamado)
-    console.log('🔗 URL:', urlChamado)
-    console.log('📌 Título:', tituloTexto)
-    console.log('🧭 Categoria:', breadcrumbTexto || 'Sem categoria')
-    console.log('📂 Tipo:', isCamera ? 'CÂMERA (CFTV)' : 'OUTROS')
+    logTicket(ticket, camera)
   }
 
+  // 8️⃣ Logs finais
   console.log('==========================')
-  console.log(`📊 Total de chamados lidos: ${totalChamados}`)
   console.log(`📷 Total CÂMERAS: ${cameras}`)
   console.log(`🔵 Outros chamados: ${outros}`)
   console.log('==========================')
 
+  // 9️⃣ Mantém navegador aberto por 60s para conferência
   console.log('🛑 Script finalizado. Navegador aberto por 60s.')
   await page.waitForTimeout(60000)
 
+  // 10️⃣ Fecha navegador
   await browser.close()
 })()
