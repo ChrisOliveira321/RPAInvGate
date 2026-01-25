@@ -23,36 +23,36 @@ class MyWorkPage {
 
   // Abre a aba "Sem atribuir" (mesma lógica do código antigo que funcionava)
   async openUnassignedTab() {
-    const abaSemAtribuir = this.page.locator(
+    console.log('🔍 Tentando abrir aba "Sem atribuir" (modo humano)...')
+
+    const aba = this.page.locator(
       'div.section-head-tab-content:has-text("Sem atribuir")'
-    )
+    ).first()
 
-    // 🔹 garante que a aba exista e esteja visível
-    await abaSemAtribuir.first().waitFor({
-      state: 'visible',
-      timeout: 10000
-    })
+    await aba.waitFor({ state: 'visible', timeout: 10000 })
 
-    const count = await abaSemAtribuir.count()
-    console.log(`🟡 Abas "Sem atribuir" encontradas: ${count}`)
-
-    if (count === 0) {
-      throw new Error('Aba "Sem atribuir" não encontrada')
+    const box = await aba.boundingBox()
+    if (!box) {
+      throw new Error('❌ Não foi possível obter posição da aba')
     }
 
-    // 🔹 clique FORÇADO (igual ao código antigo)
-    await abaSemAtribuir.first().click({ force: true })
-    console.log('🟡 Clique realizado em "Sem atribuir"')
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
 
-    // 🔥 espera real de troca de conteúdo
-    console.log('⏳ Aguardando lista de chamados carregar...')
-    await this.page.waitForFunction(() => {
-      return document.querySelectorAll('.card').length > 0
-    }, { timeout: 15000 })
+    // 🧠 simula mouse humano
+    await this.page.mouse.move(x, y)
+    await this.page.mouse.down()
+    await this.page.waitForTimeout(100)
+    await this.page.mouse.up()
 
-    // pequena pausa pra estabilizar DOM (InvGate precisa disso)
-    await this.page.waitForTimeout(2000)
+    console.log('🟡 Clique humano realizado')
+
+    // espera longa pro SPA reagir
+    await this.page.waitForTimeout(4000)
   }
+
+
+
 
   // Scroll infinito para garantir que todos os cards carreguem
   async scrollToLoadAllCards() {
@@ -82,6 +82,12 @@ class MyWorkPage {
     const tickets = await this.page.$$('.card')
     console.log(`🎫 Total de cards encontrados: ${tickets.length}`)
     return tickets
+  }
+
+  // Abre um ticket específico
+  async openTicket(ticketEl) {
+    await ticketEl.click()
+    console.log('🎯 Ticket aberto')
   }
 }
 
