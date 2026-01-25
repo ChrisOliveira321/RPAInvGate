@@ -3,39 +3,21 @@ class TicketPage {
     this.page = page
   }
 
-  // Aguarda o ticket carregar
   async waitLoaded() {
-    await this.page.waitForSelector(
-      'div.ticket-header',
-      { timeout: 15000 }
-    )
-    console.log('📄 Ticket carregado')
+    console.log('⏳ Aguardando TicketPage carregar...')
+    await this.page.waitForSelector('.item-title', { timeout: 15000 })
+    console.log('📄 TicketPage carregado')
   }
 
-  // Extrai dados principais do ticket
-  async readData() {
-    const ticketNumber = await this.page.locator(
-      '.ticket-id'
-    ).innerText()
-
-    const title = await this.page.locator(
-      '.ticket-title'
-    ).innerText()
-
-    console.log(`👁️ Ticket ${ticketNumber} - ${title}`)
-
-    // 🔥 aqui depois entram:
-    // - atividades
-    // - CF
-    // - SLA
-    // - prioridade
+  // 🔮 FUTURO: atividade, comentários, SLA
+  async readLastActivity() {
+    // exemplo futuro
   }
 
-  // Volta para a fila
   async goBack() {
+    console.log('↩️ Voltando para MyWork...')
     await this.page.goBack()
     await this.page.waitForTimeout(2000)
-    console.log('↩️ Voltou para MyWork')
   }
 }
 

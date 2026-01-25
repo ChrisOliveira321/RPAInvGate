@@ -1,59 +1,60 @@
 const { launchBrowser } = require('./src/browser/launchBrowser')
 const { MyWorkPage } = require('./src/pages/myWork.page')
-const { extractTicketData } = require('./src/services/ticket.service')
+const { TicketPage } = require('./src/pages/ticketPage')
 const { isCftv } = require('./src/rules/cftv.rule')
 const { logTicket } = require('./src/utils/logger')
 
 ;(async () => {
-  // 1️⃣ Lança navegador (UM SÓ)
   const { browser, page } = await launchBrowser()
-
   const myWork = new MyWorkPage(page)
 
-  // 2️⃣ Abre MyWork
   console.log('🌐 Abrindo InvGate...')
   await myWork.open()
 
-  // 3️⃣ Login manual
   console.log('➡️ Faça o login manualmente...')
   await myWork.waitLogin()
 
-  // 4️⃣ Abre aba "Sem atribuir"
   await myWork.openUnassignedTab()
-
-  // 5️⃣ Scroll para carregar todos os cards
   await myWork.scrollToLoadAllCards()
 
-  // 6️⃣ Captura tickets
-  const tickets = await myWork.getTickets()
-  console.log(`🎫 Chamados encontrados: ${tickets.length}`)
+  const ticketsCount = await myWork.getTicketsCount()
+  console.log(`🎫 Chamados encontrados: ${ticketsCount}`)
 
-  let totalChamados = 0
   let cameras = 0
   let outros = 0
+  let totalLidos = 0
 
-  // 7️⃣ Processa chamados
-  for (const ticketEl of tickets) {
-    totalChamados++
+  for (let i = 0; i < ticketsCount; i++) {
+    totalLidos++
+    console.log(`\n➡️ Processando ticket ${totalLidos}/${ticketsCount}`)
 
-    const ticket = await extractTicketData(ticketEl)
-    const camera = isCftv(ticket.breadcrumb)
+    // 🔹 1. LÊ DO CARD (FORMA ESTÁVEL)
+    const ticketResumo = await myWork.readTicketByIndex(i)
 
+    const camera = isCftv(ticketResumo.breadcrumb)
     camera ? cameras++ : outros++
+    logTicket(ticketResumo, camera)
 
-    logTicket(ticket, camera)
+    // 🔮 FUTURO: só entra se precisar
+    if (camera) {
+      await myWork.openTicketByIndex(i)
+
+      const ticketPage = new TicketPage(page)
+      await ticketPage.waitLoaded()
+
+      // futuramente:
+      // await ticketPage.readLastActivity()
+
+      await ticketPage.goBack()
+    }
   }
 
-  // 8️⃣ Logs finais
-  console.log('==========================')
-  console.log(`📊 Total de chamados lidos: ${totalChamados}`)
+  console.log('\n==========================')
+  console.log(`📊 Total de chamados lidos: ${totalLidos}`)
   console.log(`📷 Total CÂMERAS: ${cameras}`)
   console.log(`🔵 Outros chamados: ${outros}`)
   console.log('==========================')
 
-  // 9️⃣ Espera para conferência
-  console.log('🛑 Script finalizado. Navegador aberto por 60s.')
   await page.waitForTimeout(60000)
-
   await browser.close()
 })()
