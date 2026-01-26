@@ -1,3 +1,7 @@
+const { cardParser } = require('../utils/cardParser')
+const { parseCardData } = require('../utils/cardParser')
+
+
 class MyWorkPage {
   constructor(page) {
     this.page = page
@@ -26,7 +30,6 @@ class MyWorkPage {
   async openUnassignedTab() {
     console.log('🎯 Indo para aba "Sem atribuir" (clique DOM + validação)...')
 
-    // 1) Espera a aba existir
     const tabText = this.page
       .locator('div.section-head-tab-text[title="Sem atribuir"]')
       .first()
@@ -34,7 +37,6 @@ class MyWorkPage {
     await tabText.waitFor({ state: 'visible', timeout: 30000 })
     await tabText.scrollIntoViewIfNeeded()
 
-    // 2) Tenta clicar e validar várias vezes
     for (let attempt = 1; attempt <= 5; attempt++) {
       const activeBefore = await this.getActiveTabTitle()
       console.log(`🧠 Aba ativa antes (tentativa ${attempt}): ${activeBefore}`)
@@ -44,11 +46,9 @@ class MyWorkPage {
         return
       }
 
-      // 👉 Clique no TEXTO
       await tabText.click({ timeout: 10000 })
       console.log(`🖱️ Clique em "Sem atribuir" (texto) feito`)
 
-      // 3) Espera aba virar active
       try {
         await this.page.waitForFunction(() => {
           const el = document.querySelector(
@@ -61,11 +61,12 @@ class MyWorkPage {
         console.log('✅ Aba "Sem atribuir" ativou!')
         return
       } catch (e) {
-        // fallback: clicar no CONTAINER pai (às vezes o SPA só responde nele)
         console.log('⚠️ Não ativou, tentando clique no container pai...')
 
         const tabContainer = this.page
-          .locator('.section-head-tab-content:has(.section-head-tab-text[title="Sem atribuir"])')
+          .locator(
+            '.section-head-tab-content:has(.section-head-tab-text[title="Sem atribuir"])'
+          )
           .first()
 
         await tabContainer.scrollIntoViewIfNeeded()
@@ -108,6 +109,132 @@ class MyWorkPage {
 
     console.log('✅ Confirmado: aba "Sem atribuir" está ativa')
   }
+
+  // =========================
+  // ✅ O QUE ESTAVA FALTANDO
+  // =========================
+
+  // Container pai onde ficam todos os cards
+  cardsContainer() {
+    return this.page.locator(
+      '#page_content > div.content-columns > div.body-left > div > div.content > div'
+    )
+  }
+
+  // Todos os cards (padrão id: card_30160)
+  cards() {
+    return this.cardsContainer().locator('div[id^="card_"]')
+  }
+
+  // Scroll pra carregar todos os cards (SPA lazy load)
+  async scrollAllCards() {
+    console.log('⏳ Scrollando para carregar todos os cards...')
+
+    const container = this.cardsContainer()
+    await container.waitFor({ state: 'visible', timeout: 30000 })
+
+    let lastCount = 0
+
+    for (let i = 1; i <= 30; i++) {
+      const count = await this.cards().count()
+      console.log(`📦 Cards visíveis (loop ${i}): ${count}`)
+
+      if (count === lastCount) {
+        await this.page.mouse.wheel(0, 1200)
+        await this.page.waitForTimeout(700)
+
+        const count2 = await this.cards().count()
+        if (count2 === lastCount) break
+        lastCount = count2
+      } else {
+        lastCount = count
+      }
+
+      await this.page.mouse.wheel(0, 1400)
+      await this.page.waitForTimeout(800)
+    }
+
+    console.log(`✅ Total de cards carregados: ${await this.cards().count()}`)
+  }
+
+  // Lê todos os cards e extrai infos
+  async readCards() {
+    const cards = this.cards()
+    const total = await cards.count()
+    console.log(`🧾 Lendo cards... Total: ${total}`)
+
+    const items = []
+    const seen = new Set()
+
+    for (let i = 0; i < total; i++) {
+      const card = cards.nth(i)
+
+      const idAttr = await card.getAttribute('id')
+
+      const body = card.locator('div.card-body')
+      const footer = card.locator('div.card-footer')
+
+      const bodyText = (await body.innerText().catch(() => '')).trim()
+      const footerText = (await footer.innerText().catch(() => '')).trim()
+
+      // prioridade (best effort)
+      const priority =
+        (await card.locator('text=Urgente').count()) > 0
+          ? 'Urgente'
+          : (await card.locator('text=Média').count()) > 0
+          ? 'Média'
+          : null
+
+      // URL (normalmente tem um link dentro do card)
+      const link = card
+        .locator('a[href*="/requests/show"][href*="/id/"]')
+        .first()
+
+      const href = await link.getAttribute('href').catch(() => null)
+      const url = href
+        ? href.startsWith('http')
+          ? href
+          : `https://rochalog.sd.cloud.invgate.net${href}`
+        : null
+
+      const parsed = parseCardData({ idAttr, bodyText, footerText, priority, url })
+
+      if (!parsed.number) continue
+      if (seen.has(parsed.number)) continue
+      seen.add(parsed.number)
+
+      items.push(parsed)
+    }
+
+    console.log(`✅ Cards parseados (únicos): ${items.length}`)
+    return items
+  }
+
+  async waitCardsArea() {
+  console.log('⏳ Aguardando área de cards renderizar...')
+
+  const container = this.page.locator(
+    '#page_content > div.content-columns > div.body-left > div > div.content > div'
+  )
+
+  await container.waitFor({ state: 'visible', timeout: 30000 })
+
+  // Agora espera alguma coisa "parecida com card" aparecer dentro
+  // (bem genérico pra não depender de id card_)
+  await this.page.waitForFunction(() => {
+    const root = document.querySelector(
+      '#page_content > div.content-columns > div.body-left > div > div.content > div'
+    )
+    if (!root) return false
+    const hasLink = root.querySelector('a[href*="/requests/show"]')
+    const hasCardId = root.querySelector('[id^="card_"]')
+    return Boolean(hasLink || hasCardId)
+  }, { timeout: 30000 })
+
+  console.log('✅ Área de cards pronta (tem conteúdo)')
+}
+
+
 }
 
 module.exports = { MyWorkPage }
