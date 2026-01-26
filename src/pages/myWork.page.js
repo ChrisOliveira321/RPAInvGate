@@ -3,109 +3,111 @@ class MyWorkPage {
     this.page = page
   }
 
+  // Abre MyWork (o filter ajuda, mas NÃO dependemos dele)
   async open() {
     await this.page.goto(
-      'https://rochalog.sd.cloud.invgate.net/mywork',
-      { waitUntil: 'domcontentloaded' }
+      'https://rochalog.sd.cloud.invgate.net/mywork?filter=toAssign',
+      { waitUntil: 'networkidle' }
     )
-    console.log('🌐 Página MyWork aberta')
+    console.log('🌐 MyWork aberto')
   }
 
-  async waitLogin() {
-    await this.page.waitForSelector(
-      'div.section-head-tab-content',
-      { timeout: 0 }
-    )
-    console.log('✅ Login detectado')
+  // Pega o título da aba ativa de verdade
+  async getActiveTabTitle() {
+    return await this.page.evaluate(() => {
+      const el = document.querySelector(
+        '.section-head-tab.active .section-head-tab-text'
+      )
+      return el?.getAttribute('title') || el?.textContent?.trim() || null
+    })
   }
 
+  // ✅ ÚNICA forma que vamos usar: clique DOM + validação (com retries)
   async openUnassignedTab() {
-    console.log('🔍 Abrindo aba "Sem atribuir"...')
+    console.log('🎯 Indo para aba "Sem atribuir" (clique DOM + validação)...')
 
-    const aba = this.page
-      .locator('div.section-head-tab-content:has-text("Sem atribuir")')
+    // 1) Espera a aba existir
+    const tabText = this.page
+      .locator('div.section-head-tab-text[title="Sem atribuir"]')
       .first()
 
-    await aba.waitFor({ state: 'visible', timeout: 10000 })
-    await aba.click({ force: true })
+    await tabText.waitFor({ state: 'visible', timeout: 30000 })
+    await tabText.scrollIntoViewIfNeeded()
 
-    console.log('✅ Aba "Sem atribuir" aberta')
-    await this.page.waitForTimeout(3000)
-  }
+    // 2) Tenta clicar e validar várias vezes
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const activeBefore = await this.getActiveTabTitle()
+      console.log(`🧠 Aba ativa antes (tentativa ${attempt}): ${activeBefore}`)
 
-  async scrollToLoadAllCards() {
-    console.log('⏳ Scrollando para carregar todos os cards...')
-    let lastHeight = 0
+      if (activeBefore === 'Sem atribuir') {
+        console.log('✅ Já está em "Sem atribuir"')
+        return
+      }
 
-    while (true) {
-      const height = await this.page.evaluate(
-        () => document.body.scrollHeight
-      )
+      // 👉 Clique no TEXTO
+      await tabText.click({ timeout: 10000 })
+      console.log(`🖱️ Clique em "Sem atribuir" (texto) feito`)
 
-      if (height === lastHeight) break
-      lastHeight = height
+      // 3) Espera aba virar active
+      try {
+        await this.page.waitForFunction(() => {
+          const el = document.querySelector(
+            '.section-head-tab.active .section-head-tab-text'
+          )
+          const title = el?.getAttribute('title') || el?.textContent?.trim()
+          return title === 'Sem atribuir'
+        }, { timeout: 8000 })
 
-      await this.page.evaluate(() =>
-        window.scrollTo(0, document.body.scrollHeight)
-      )
+        console.log('✅ Aba "Sem atribuir" ativou!')
+        return
+      } catch (e) {
+        // fallback: clicar no CONTAINER pai (às vezes o SPA só responde nele)
+        console.log('⚠️ Não ativou, tentando clique no container pai...')
 
-      await this.page.waitForTimeout(1200)
+        const tabContainer = this.page
+          .locator('.section-head-tab-content:has(.section-head-tab-text[title="Sem atribuir"])')
+          .first()
+
+        await tabContainer.scrollIntoViewIfNeeded()
+        await tabContainer.click({ timeout: 10000 })
+
+        try {
+          await this.page.waitForFunction(() => {
+            const el = document.querySelector(
+              '.section-head-tab.active .section-head-tab-text'
+            )
+            const title = el?.getAttribute('title') || el?.textContent?.trim()
+            return title === 'Sem atribuir'
+          }, { timeout: 8000 })
+
+          console.log('✅ Aba "Sem atribuir" ativou (via container)!')
+          return
+        } catch {
+          console.log('⚠️ Ainda não ativou. Vou tentar novamente...')
+          await this.page.waitForTimeout(800)
+        }
+      }
     }
 
-    console.log('✅ Todos os cards carregados')
+    const finalActive = await this.getActiveTabTitle()
+    throw new Error(
+      `❌ Não consegui ativar "Sem atribuir". Aba ativa final: ${finalActive}`
+    )
   }
 
-  async getTicketsCount() {
-    return await this.page.locator('.card').count()
-  }
+  // Validação final
+  async assertUnassignedLoaded() {
+    console.log('🎯 Validando aba ativa...')
 
-  getTicketByIndex(index) {
-    return this.page.locator('.card').nth(index)
-  }
+    const activeTitle = await this.getActiveTabTitle()
+    console.log(`📌 Aba ativa detectada: ${activeTitle}`)
 
-  async openTicket(ticketEl) {
-    await ticketEl.click()
-    console.log('🎯 Ticket aberto')
-  }
-
-  async readTicketByIndex(index) {
-  const ticket = this.page.locator('.card').nth(index)
-
-  // 🔹 TÍTULO
-  const titleEl = ticket.locator('.item-title').first()
-  const title = await titleEl.count()
-    ? (await titleEl.innerText()).trim()
-    : 'Sem título'
-
-  // 🔹 CATEGORIA / BREADCRUMB
-  const breadcrumbEl = ticket.locator('.card-breadcrumb-text').first()
-  const breadcrumb = await breadcrumbEl.count()
-    ? (await breadcrumbEl.innerText())
-        .toUpperCase()
-        .replace(/\s+/g, '')
-    : ''
-
-  // 🔹 LINK / ID
-  const linkEl = ticket.locator(
-    'a[href*="/requests/show/index/id/"]'
-  ).first()
-
-  let id = 'N/A'
-  let url = ''
-
-  if (await linkEl.count()) {
-    const href = await linkEl.getAttribute('href')
-    const match = href.match(/id\/(\d+)/)
-
-    if (match) {
-      id = `#${match[1]}`
-      url = `https://rochalog.sd.cloud.invgate.net${href}`
+    if (activeTitle !== 'Sem atribuir') {
+      throw new Error(`❌ Aba ativa NÃO é "Sem atribuir". Está em: ${activeTitle}`)
     }
+
+    console.log('✅ Confirmado: aba "Sem atribuir" está ativa')
   }
-
-  return { id, url, title, breadcrumb }
-}
-
 }
 
 module.exports = { MyWorkPage }
