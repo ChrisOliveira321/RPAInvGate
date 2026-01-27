@@ -1,6 +1,7 @@
 // index.js
 const { launchBrowser } = require('./src/browser/launchBrowser')
 const { MyWorkPage } = require('./src/pages/myWork.page')
+const { isCameraTicket } = require('./src/rules/isCameraTicket')
 
 ;(async () => {
   const { browser, page } = await launchBrowser({
@@ -31,6 +32,15 @@ const { MyWorkPage } = require('./src/pages/myWork.page')
 
   console.log('🧾 Lendo cards e extraindo informações...')
   const cards = await myWork.readCards()
+
+  const cameraTickets = cards.filter(isCameraTicket)
+
+  console.log(`\n📷 TOTAL CÂMERAS: ${cameraTickets.length}`)
+  console.log(`🔵 OUTROS: ${cards.length - cameraTickets.length}\n`)
+
+  for (const c of cameraTickets) {
+    console.log(`#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.requester ?? '-'}`)
+  }
 
   console.log('\n==========================')
   console.log(`✅ TOTAL DE CARDS LIDOS: ${cards.length}`)
