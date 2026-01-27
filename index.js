@@ -1,7 +1,11 @@
 // index.js
 const { launchBrowser } = require('./src/browser/launchBrowser')
 const { MyWorkPage } = require('./src/pages/myWork.page')
-const { isCameraTicket } = require('./src/rules/isCameraTicket')
+
+const { isCftvTicket } = require('./src/rules/isCftvTicket')
+
+const { TicketPage } = require('./src/pages/ticket.page')
+const { selectTicketsToOpen } = require('./src/services/ticket.service')
 
 ;(async () => {
   const { browser, page } = await launchBrowser({
@@ -33,15 +37,61 @@ const { isCameraTicket } = require('./src/rules/isCameraTicket')
   console.log('🧾 Lendo cards e extraindo informações...')
   const cards = await myWork.readCards()
 
-  const cameraTickets = cards.filter(isCameraTicket)
+  // ✅ instancia UMA vez
+  const ticketPage = new TicketPage(page)
 
-  console.log(`\n📷 TOTAL CÂMERAS: ${cameraTickets.length}`)
-  console.log(`🔵 OUTROS: ${cards.length - cameraTickets.length}\n`)
+  // 🔥 seleção automática: só CFTV (depende do que está no ticket.service)
+  const ticketsToOpen = selectTicketsToOpen(cards, 5)
 
-  for (const c of cameraTickets) {
-    console.log(`#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.requester ?? '-'}`)
+  console.log(`🧪 DEBUG filtro: cards=${cards.length} | CFTV selecionados=${ticketsToOpen.length}`)
+
+  console.log(`\n🎯 Entrando em ${ticketsToOpen.length} chamados CFTV\n`)
+
+  // ✅ abre e coleta INSIGHTS (atividade real + descrição)
+  for (const t of ticketsToOpen) {
+    console.log(`➡️ Abrindo chamado #${t.number}`)
+
+    const full = await ticketPage.getTicketInsights(t)
+
+    // mantém seus campos antigos (pra não quebrar prints)
+    t.hasActivity = full.hasAnyFollowUp
+    t.requesterFull = full.requesterFull ?? null
+    t.descriptionText = full.descriptionText
+
+    console.log(
+      `🆔 #${t.number} | Atividade: ${t.hasActivity ? 'SIM' : 'NÃO'} | Solicitante: ${t.requesterFull ?? 'N/D'}`
+    )
+
+    console.log(
+      `📝 Descrição: ${(t.descriptionText || '').slice(0, 160)}${(t.descriptionText || '').length > 160 ? '…' : ''}`
+    )
+
+    console.log(
+      `📷 Cams: ${full.extractedCameraRefs.join(', ') || '-'} | 📍 Loc: ${full.extractedLocations.join(', ') || '-'}`
+    )
+
+    console.log(
+      `🧠 agente: ${full.hasAgentReply ? 'SIM' : 'NÃO'} | followup: ${full.hasAnyFollowUp ? 'SIM' : 'NÃO'}`
+    )
   }
 
+  // =========================
+  // LISTA CFTV (cards)
+  // =========================
+  const cftvTickets = cards.filter(isCftvTicket)
+
+  console.log(`\n📷 TOTAL CFTV (cards): ${cftvTickets.length}`)
+  console.log(`🔵 OUTROS: ${cards.length - cftvTickets.length}\n`)
+
+  for (const c of cftvTickets) {
+    console.log(
+      `#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.requester ?? '-'}`
+    )
+  }
+
+  // =========================
+  // LOGS GERAIS (mantidos)
+  // =========================
   console.log('\n==========================')
   console.log(`✅ TOTAL DE CARDS LIDOS: ${cards.length}`)
   console.log('==========================\n')
@@ -61,6 +111,20 @@ const { isCameraTicket } = require('./src/rules/isCameraTicket')
   for (const c of cards) {
     console.log(
       `#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.category ?? '-'} | ${c.requester ?? '-'}`
+    )
+  }
+
+  // =========================
+  // INSIGHTS SEPARADO (opcional, mas mantendo)
+  // =========================
+  const cftvTicketsTop10 = cftvTickets.slice(0, 10)
+
+  for (const t of cftvTicketsTop10) {
+    console.log(`➡️ Entrando no ticket #${t.number}`)
+    const full = await ticketPage.getTicketInsights(t)
+
+    console.log(
+      `#${full.number} | followup: ${full.hasAnyFollowUp ? 'SIM' : 'NÃO'} | agente: ${full.hasAgentReply ? 'SIM' : 'NÃO'} | cams: ${full.extractedCameraRefs.join(', ') || '-'} | loc: ${full.extractedLocations.join(', ') || '-'}`
     )
   }
 
