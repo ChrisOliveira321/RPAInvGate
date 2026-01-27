@@ -1,6 +1,5 @@
-const { cardParser } = require('../utils/cardParser')
+// src/pages/myWork.page.js
 const { parseCardData } = require('../utils/cardParser')
-
 
 class MyWorkPage {
   constructor(page) {
@@ -11,7 +10,7 @@ class MyWorkPage {
   async open() {
     await this.page.goto(
       'https://rochalog.sd.cloud.invgate.net/mywork?filter=toAssign',
-      { waitUntil: 'networkidle' }
+      { waitUntil: 'domcontentloaded' }
     )
     console.log('🌐 MyWork aberto')
   }
@@ -111,37 +110,59 @@ class MyWorkPage {
   }
 
   // =========================
-  // ✅ O QUE ESTAVA FALTANDO
+  // ✅ CARDS
   // =========================
 
-  // Container pai onde ficam todos os cards
+  // Container pai (bom ter, mas não vamos depender 100%)
   cardsContainer() {
     return this.page.locator(
       '#page_content > div.content-columns > div.body-left > div > div.content > div'
     )
   }
 
-  // Todos os cards (padrão id: card_30160)
+  // Cards (super robusto)
   cards() {
-    return this.cardsContainer().locator('div[id^="card_"]')
+    // Se o container mudar, ainda assim pegamos os cards na página inteira
+    return this.page.locator('[id^="card_"]')
+  }
+
+  async waitCardsArea() {
+    console.log('⏳ Aguardando área de cards renderizar...')
+
+    const container = this.cardsContainer()
+    await container.waitFor({ state: 'visible', timeout: 30000 })
+
+    await this.page.waitForFunction(() => {
+      const root = document.querySelector(
+        '#page_content > div.content-columns > div.body-left > div > div.content > div'
+      )
+      if (!root) return false
+
+      const hasCard = root.querySelector('[id^="card_"]')
+      const hasBody = root.querySelector('div.card-body')
+      const hasFooter = root.querySelector('div.card-footer')
+      return Boolean(hasCard || hasBody || hasFooter)
+    }, { timeout: 30000 })
+
+    console.log('✅ Área de cards pronta (tem conteúdo)')
   }
 
   // Scroll pra carregar todos os cards (SPA lazy load)
   async scrollAllCards() {
     console.log('⏳ Scrollando para carregar todos os cards...')
 
-    const container = this.cardsContainer()
-    await container.waitFor({ state: 'visible', timeout: 30000 })
+    await this.waitCardsArea()
 
     let lastCount = 0
 
-    for (let i = 1; i <= 30; i++) {
+    for (let i = 1; i <= 40; i++) {
       const count = await this.cards().count()
       console.log(`📦 Cards visíveis (loop ${i}): ${count}`)
 
       if (count === lastCount) {
-        await this.page.mouse.wheel(0, 1200)
-        await this.page.waitForTimeout(700)
+        // scroll extra e encerra se não mudar
+        await this.page.evaluate(() => window.scrollBy(0, 2500))
+        await this.page.waitForTimeout(900)
 
         const count2 = await this.cards().count()
         if (count2 === lastCount) break
@@ -150,8 +171,8 @@ class MyWorkPage {
         lastCount = count
       }
 
-      await this.page.mouse.wheel(0, 1400)
-      await this.page.waitForTimeout(800)
+      await this.page.evaluate(() => window.scrollBy(0, 3000))
+      await this.page.waitForTimeout(900)
     }
 
     console.log(`✅ Total de cards carregados: ${await this.cards().count()}`)
@@ -159,6 +180,8 @@ class MyWorkPage {
 
   // Lê todos os cards e extrai infos
   async readCards() {
+    await this.waitCardsArea()
+
     const cards = this.cards()
     const total = await cards.count()
     console.log(`🧾 Lendo cards... Total: ${total}`)
@@ -169,7 +192,7 @@ class MyWorkPage {
     for (let i = 0; i < total; i++) {
       const card = cards.nth(i)
 
-      const idAttr = await card.getAttribute('id')
+      const idAttr = await card.getAttribute('id').catch(() => null)
 
       const body = card.locator('div.card-body')
       const footer = card.locator('div.card-footer')
@@ -185,11 +208,8 @@ class MyWorkPage {
           ? 'Média'
           : null
 
-      // URL (normalmente tem um link dentro do card)
-      const link = card
-        .locator('a[href*="/requests/show"][href*="/id/"]')
-        .first()
-
+      // URL (pode ter mais de um link por card)
+      const link = card.locator('a[href*="requests/show"]').first()
       const href = await link.getAttribute('href').catch(() => null)
       const url = href
         ? href.startsWith('http')
@@ -197,7 +217,13 @@ class MyWorkPage {
           : `https://rochalog.sd.cloud.invgate.net${href}`
         : null
 
-      const parsed = parseCardData({ idAttr, bodyText, footerText, priority, url })
+      const parsed = parseCardData({
+        idAttr,
+        bodyText,
+        footerText,
+        priority,
+        url,
+      })
 
       if (!parsed.number) continue
       if (seen.has(parsed.number)) continue
@@ -210,31 +236,13 @@ class MyWorkPage {
     return items
   }
 
-  async waitCardsArea() {
-  console.log('⏳ Aguardando área de cards renderizar...')
-
-  const container = this.page.locator(
-    '#page_content > div.content-columns > div.body-left > div > div.content > div'
-  )
-
-  await container.waitFor({ state: 'visible', timeout: 30000 })
-
-  // Agora espera alguma coisa "parecida com card" aparecer dentro
-  // (bem genérico pra não depender de id card_)
-  await this.page.waitForFunction(() => {
-    const root = document.querySelector(
-      '#page_content > div.content-columns > div.body-left > div > div.content > div'
-    )
-    if (!root) return false
-    const hasLink = root.querySelector('a[href*="/requests/show"]')
-    const hasCardId = root.querySelector('[id^="card_"]')
-    return Boolean(hasLink || hasCardId)
-  }, { timeout: 30000 })
-
-  console.log('✅ Área de cards pronta (tem conteúdo)')
-}
-
-
+  async debugCounts() {
+    console.log('\n🧪 DEBUG DOM (página inteira):')
+    console.log('div.card-body:', await this.page.locator('div.card-body').count())
+    console.log('div.card-footer:', await this.page.locator('div.card-footer').count())
+    console.log('qualquer requests/show:', await this.page.locator('a[href*="requests/show"]').count())
+    console.log('id^=card_:', await this.page.locator('[id^="card_"]').count())
+  }
 }
 
 module.exports = { MyWorkPage }
