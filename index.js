@@ -43,7 +43,9 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
   // 🔥 seleção automática: só CFTV (depende do que está no ticket.service)
   const ticketsToOpen = selectTicketsToOpen(cards, 5)
 
-  console.log(`🧪 DEBUG filtro: cards=${cards.length} | CFTV selecionados=${ticketsToOpen.length}`)
+  console.log(
+    `🧪 DEBUG filtro: cards=${cards.length} | CFTV selecionados=${ticketsToOpen.length}`
+  )
 
   console.log(`\n🎯 Entrando em ${ticketsToOpen.length} chamados CFTV\n`)
 
@@ -59,20 +61,33 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
     t.descriptionText = full.descriptionText
 
     console.log(
-      `🆔 #${t.number} | Atividade: ${t.hasActivity ? 'SIM' : 'NÃO'} | Solicitante: ${t.requesterFull ?? 'N/D'}`
+      `🆔 #${t.number} | Atividade: ${t.hasActivity ? 'SIM' : 'NÃO'} | Solicitante: ${
+        t.requesterFull ?? 'N/D'
+      }`
     )
 
     console.log(
-      `📝 Descrição: ${(t.descriptionText || '').slice(0, 160)}${(t.descriptionText || '').length > 160 ? '…' : ''}`
+      `📝 Descrição: ${(t.descriptionText || '').slice(0, 160)}${
+        (t.descriptionText || '').length > 160 ? '…' : ''
+      }`
     )
 
     console.log(
-      `📷 Cams: ${full.extractedCameraRefs.join(', ') || '-'} | 📍 Loc: ${full.extractedLocations.join(', ') || '-'}`
+      `📷 Cams: ${full.extractedCameraRefs.join(', ') || '-'} | 📍 Loc: ${
+        full.extractedLocations.join(', ') || '-'
+      }`
     )
 
     console.log(
-      `🧠 agente: ${full.hasAgentReply ? 'SIM' : 'NÃO'} | followup: ${full.hasAnyFollowUp ? 'SIM' : 'NÃO'}`
+      `🧠 agente: ${full.hasAgentReply ? 'SIM' : 'NÃO'} | followup: ${
+        full.hasAnyFollowUp ? 'SIM' : 'NÃO'
+      }`
     )
+
+    // ✅ MELHOR LUGAR pro preview: aqui o "full" existe
+    if (full.timeline?.preview?.length) {
+      console.log('🧪 timeline preview:', full.timeline.preview)
+    }
   }
 
   // =========================
@@ -84,9 +99,7 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
   console.log(`🔵 OUTROS: ${cards.length - cftvTickets.length}\n`)
 
   for (const c of cftvTickets) {
-    console.log(
-      `#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.requester ?? '-'}`
-    )
+    console.log(`#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.requester ?? '-'}`)
   }
 
   // =========================
@@ -110,7 +123,9 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
   console.log('\n📄 LISTA COMPLETA:')
   for (const c of cards) {
     console.log(
-      `#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.category ?? '-'} | ${c.requester ?? '-'}`
+      `#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.category ?? '-'} | ${
+        c.requester ?? '-'
+      }`
     )
   }
 
@@ -124,8 +139,17 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
     const full = await ticketPage.getTicketInsights(t)
 
     console.log(
-      `#${full.number} | followup: ${full.hasAnyFollowUp ? 'SIM' : 'NÃO'} | agente: ${full.hasAgentReply ? 'SIM' : 'NÃO'} | cams: ${full.extractedCameraRefs.join(', ') || '-'} | loc: ${full.extractedLocations.join(', ') || '-'}`
+      `#${full.number} | followup: ${full.hasAnyFollowUp ? 'SIM' : 'NÃO'} | agente: ${
+        full.hasAgentReply ? 'SIM' : 'NÃO'
+      } | cams: ${full.extractedCameraRefs.join(', ') || '-'} | loc: ${
+        full.extractedLocations.join(', ') || '-'
+      }`
     )
+
+    // ✅ e aqui também faz sentido, porque full existe
+    if (full.timeline?.preview?.length) {
+      console.log('🧪 timeline preview:', full.timeline.preview)
+    }
   }
 
   // deixa 30s aberto só pra ver
