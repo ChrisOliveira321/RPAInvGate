@@ -40,7 +40,7 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
   // ✅ instancia UMA vez
   const ticketPage = new TicketPage(page)
 
-  // 🔥 seleção automática: só CFTV (depende do que está no ticket.service)
+  // 🔥 seleção automática (no service) - limita quantos abrir
   const ticketsToOpen = selectTicketsToOpen(cards, 5)
 
   console.log(
@@ -56,7 +56,7 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
     const full = await ticketPage.getTicketInsights(t)
 
     // mantém seus campos antigos (pra não quebrar prints)
-    t.hasActivity = full.hasAnyFollowUp
+    t.hasActivity = Boolean(full.hasAnyFollowUp)
     t.requesterFull = full.requesterFull ?? null
     t.descriptionText = full.descriptionText
 
@@ -72,11 +72,11 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
       }`
     )
 
-    console.log(
-      `📷 Cams: ${full.extractedCameraRefs.join(', ') || '-'} | 📍 Loc: ${
-        full.extractedLocations.join(', ') || '-'
-      }`
-    )
+    // ✅ NÃO CRASHA se vier undefined
+    const cams = (full.extractedCameraRefs || []).join(', ')
+    const locs = (full.extractedLocations || []).join(', ')
+
+    console.log(`📷 Cams: ${cams || '-'} | 📍 Loc: ${locs || '-'}`)
 
     console.log(
       `🧠 agente: ${full.hasAgentReply ? 'SIM' : 'NÃO'} | followup: ${
@@ -84,10 +84,13 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
       }`
     )
 
-    // ✅ MELHOR LUGAR pro preview: aqui o "full" existe
+    // ✅ preview só quando existe
     if (full.timeline?.preview?.length) {
       console.log('🧪 timeline preview:', full.timeline.preview)
     }
+
+    // ✅ bônus (não remove nada): pra validar que abriu o ticket mesmo
+    console.log(`🔎 URL atual: ${page.url()}`)
   }
 
   // =========================
@@ -99,7 +102,9 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
   console.log(`🔵 OUTROS: ${cards.length - cftvTickets.length}\n`)
 
   for (const c of cftvTickets) {
-    console.log(`#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.requester ?? '-'}`)
+    console.log(
+      `#${c.number} | ${c.priority ?? '-'} | ${c.title ?? '-'} | ${c.requester ?? '-'}`
+    )
   }
 
   // =========================
@@ -130,26 +135,16 @@ const { selectTicketsToOpen } = require('./src/services/ticket.service')
   }
 
   // =========================
-  // INSIGHTS SEPARADO (opcional, mas mantendo)
+  // INSIGHTS SEPARADO
+  // (mantive, mas SEM DUPLICAR TRABALHO)
   // =========================
-  const cftvTicketsTop10 = cftvTickets.slice(0, 10)
-
-  for (const t of cftvTicketsTop10) {
-    console.log(`➡️ Entrando no ticket #${t.number}`)
-    const full = await ticketPage.getTicketInsights(t)
-
+  console.log('\n🧠 INSIGHTS (reaproveitando os que já abrimos):')
+  for (const t of ticketsToOpen) {
     console.log(
-      `#${full.number} | followup: ${full.hasAnyFollowUp ? 'SIM' : 'NÃO'} | agente: ${
-        full.hasAgentReply ? 'SIM' : 'NÃO'
-      } | cams: ${full.extractedCameraRefs.join(', ') || '-'} | loc: ${
-        full.extractedLocations.join(', ') || '-'
+      `#${t.number} | atividade: ${t.hasActivity ? 'SIM' : 'NÃO'} | solicitante: ${
+        t.requesterFull ?? 'N/D'
       }`
     )
-
-    // ✅ e aqui também faz sentido, porque full existe
-    if (full.timeline?.preview?.length) {
-      console.log('🧪 timeline preview:', full.timeline.preview)
-    }
   }
 
   // deixa 30s aberto só pra ver

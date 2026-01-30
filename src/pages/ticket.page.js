@@ -1,3 +1,4 @@
+// src/pages/ticket.page.js
 class TicketPage {
   constructor(page) {
     this.page = page
@@ -5,141 +6,161 @@ class TicketPage {
 
   async open(url) {
     if (!url) throw new Error('URL do ticket está vazia')
+
     await this.page.goto(url, { waitUntil: 'domcontentloaded' })
-    // pequena folga pro SPA renderizar
-    await this.page.waitForTimeout(800)
-  }
 
-  async getDescriptionText() {
-    // pega um texto grande do ticket (best effort)
-    // se depois quisermos, refinamos pro bloco "DESCRIÇÃO"
-    const txt = await this.page.evaluate(() => {
-      const normalize = s => (s || '').replace(/\s+/g, ' ').trim()
-      // tenta achar o badge "DESCRIÇÃO"
-      const badge = Array.from(document.querySelectorAll('*')).find(el => {
-        const t = normalize(el.textContent).toUpperCase()
-        return t === 'DESCRIÇÃO'
-      })
-
-      if (badge) {
-        // pega um container grande perto do badge
-        const box = badge.closest('div')?.parentElement?.parentElement
-        if (box) return normalize(box.innerText)
-      }
-
-      // fallback: pega um trecho grande do body
-      return normalize(document.body?.innerText || '')
+    // ✅ garante que realmente estamos no ticket
+    await this.page.waitForURL(/\/requests\/show\/index\/id\/\d+/, {
+      timeout: 30000,
     })
 
-    // corta pra não explodir log (mas você pode aumentar)
+    // ✅ espera render do ticket (SPA)
+    await this.page.waitForFunction(() => {
+      const body = (document.body?.innerText || '').toUpperCase()
+      return body.includes('DESCRIÇÃO') || body.includes('CLIENTE') || body.includes('COLABORADOR')
+    }, { timeout: 30000 })
+
+    await this.page.waitForTimeout(400)
+  }
+
+  // =========================
+  // HELPERS
+  // =========================
+  async _getPageText() {
+    return await this.page.evaluate(() => {
+      const normalize = s => (s || '').replace(/\s+/g, ' ').trim()
+      return normalize(document.body?.innerText || '')
+    })
+  }
+
+  async getRequesterLocation() {
+    const raw = await this._getPageText()
+    const text = (raw || '').toUpperCase()
+
+    const direct = ['GIMPO', 'GEXPO', 'MATRIZ', 'PPS', 'FIDELIDADE', 'ELDORADO', 'SERTANEJA']
+    for (const d of direct) {
+      if (text.includes(d)) return d
+    }
+
+    const azMatch =
+      text.match(/\bAZ\s*[-]?\s*(\d{1,2}[A-Z]?)\b/) || // AZ 04 / AZ10 / AZ 9A
+      text.match(/\bAZ\s+([A-ZÀ-Ú][A-ZÀ-Ú0-9 ]{2,20})\b/) // AZ MARGARIDA (best effort)
+
+    if (azMatch) return azMatch[0].replace(/\s+/g, ' ').trim()
+
+    return null
+  }
+
+  // =========================
+  // DESCRIÇÃO (CLIENTE)
+  // =========================
+  async getDescriptionText() {
+    const txt = await this.page.evaluate(() => {
+      const normalize = s => (s || '').replace(/\s+/g, ' ').trim()
+
+      const candidates = Array.from(document.querySelectorAll('div'))
+        .map(el => normalize(el.innerText))
+        .filter(t => {
+          const u = (t || '').toUpperCase()
+          if (u.length < 30) return false
+          return u.includes('DESCRIÇÃO') && u.includes('CLIENTE')
+        })
+
+      if (candidates.length) {
+        candidates.sort((a, b) => b.length - a.length)
+        return candidates[0]
+      }
+
+      // fallback: se não achar o bloco certinho, não pega o body inteiro (pra não vir "MyWork")
+      return ''
+    })
+
     return (txt || '').trim()
   }
 
+  // =========================
+  // ATIVIDADE (COLABORADOR)
+  // =========================
   async getTimelineSummary() {
     return await this.page.evaluate(() => {
       const normalize = s => (s || '').replace(/\s+/g, ' ').trim()
 
-      const candidates = Array.from(document.querySelectorAll('div'))
-        .filter(el => {
-          const r = el.getBoundingClientRect()
-          if (r.width < 300 || r.height < 60) return false
-          const t = normalize(el.innerText)
-          if (t.length < 10) return false
-          const u = t.toUpperCase()
-          return (
-            u.includes('CLIENTE') ||
-            u.includes('COLABORADOR') ||
-            u.includes('SISTEMA MUDOU O STATUS') ||
-            u.includes('ALTEROU O STATUS') ||
-            u.includes('DESATRIBUIU') ||
-            u.includes('ATRIBUIU') ||
-            u.includes('REATRIBUIU')
-          )
+      const blocks = Array.from(document.querySelectorAll('div'))
+        .map(el => normalize(el.innerText))
+        .filter(t => {
+          const u = (t || '').toUpperCase()
+          if (u.length < 20) return false
+          return u.includes('CLIENTE') || u.includes('COLABORADOR')
         })
-        .map(el => ({ text: normalize(el.innerText) }))
 
       const uniq = []
       const seen = new Set()
-      for (const c of candidates) {
-        const key = c.text.slice(0, 160)
+      for (const t of blocks) {
+        const key = t.slice(0, 180)
         if (seen.has(key)) continue
         seen.add(key)
-        uniq.push(c)
+        uniq.push(t)
       }
 
-      const events = uniq.map(({ text }) => {
+      const events = uniq.map(text => {
         const upper = text.toUpperCase()
-
-        const isClient = upper.includes('CLIENTE')
-        const isCollaborator = upper.includes('COLABORADOR')
-
-        const isSystem =
-          upper.includes('SISTEMA MUDOU O STATUS') ||
-          upper.includes('ALTEROU O STATUS') ||
-          upper.includes('DESATRIBUIU') ||
-          upper.includes('ATRIBUIU') ||
-          upper.includes('REATRIBUIU')
-
-        const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-        const author = lines[0] || null
-
-        return {
-          kind: isSystem
-            ? 'system'
-            : isCollaborator
-            ? 'collaborator'
-            : isClient
-            ? 'client'
-            : 'unknown',
-          author,
-          text,
-        }
+        const kind = upper.includes('COLABORADOR')
+          ? 'collaborator'
+          : upper.includes('CLIENTE')
+          ? 'client'
+          : 'unknown'
+        return { kind, text }
       })
 
-      const hasAgentReply = events.some(e => e.kind === 'collaborator')
+      const collaboratorEvents = events.filter(e => e.kind === 'collaborator')
+      const hasAgentReply = collaboratorEvents.length > 0
 
-      const messageEvents = events.filter(
-        e => e.kind === 'client' || e.kind === 'collaborator'
-      )
-      const systemEvents = events.filter(e => e.kind === 'system')
-
-      const hasAnyFollowUp =
-        messageEvents.length >= 2 ||
-        (messageEvents.length >= 1 && systemEvents.length >= 1)
+      const lastActivityText = hasAgentReply
+        ? collaboratorEvents[collaboratorEvents.length - 1].text
+        : null
 
       return {
         totalEvents: events.length,
-        messageCount: messageEvents.length,
-        systemCount: systemEvents.length,
         hasAgentReply,
-        hasAnyFollowUp,
+        lastActivityText,
+        allActivityTexts: collaboratorEvents.map(e => e.text),
         preview: events.slice(0, 6).map(e => ({
           kind: e.kind,
-          author: e.author,
-          text: e.text.slice(0, 120),
+          text: (e.text || '').slice(0, 120),
         })),
       }
     })
   }
 
-  // ✅ ESTE MÉTODO ESTAVA FALTANDO
+  // =========================
+  // INSIGHTS
+  // =========================
   async getTicketInsights(ticketFromList) {
-    // garante que abriu a página do ticket
     if (ticketFromList?.url) {
       await this.open(ticketFromList.url)
     }
 
     const descriptionText = await this.getDescriptionText()
     const timeline = await this.getTimelineSummary()
+    const location = await this.getRequesterLocation()
 
     return {
       ...ticketFromList,
-      descriptionText,
+
+      // ✅ o que você quer
       hasAgentReply: timeline.hasAgentReply,
-      hasAnyFollowUp: timeline.hasAnyFollowUp,
+      hasAnyFollowUp: timeline.hasAgentReply, // pra manter compat com seu index (Atividade SIM/NÃO)
+      activityText: timeline.lastActivityText,
+      activityTexts: timeline.allActivityTexts,
+      descriptionText,
+      location,
+
+      // ✅ compat com logs antigos (não quebra join)
+      extractedCameraRefs: [],
+      extractedLocations: location ? [location] : [],
+
+      // ✅ debug
       timeline,
-      extractedCameraRefs: [], // deixa vazio por enquanto (você disse pra focar em atividade)
-      extractedLocations: [],
     }
   }
 }
