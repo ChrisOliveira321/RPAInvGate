@@ -4,15 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "start": "node index.js",
-  "login": "node login.js"
-},
-
+    "start": "node index.js",
+    "login": "node login.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "better-sqlite3": "^12.6.2",
     "playwright": "^1.57.0"
   }
 }

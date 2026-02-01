@@ -1,12 +1,12 @@
 // src/pages/myWork.page.js
 const { parseCardData } = require('../utils/cardParser')
+const { saveTicket } = require('../db/ticketRepo')
 
 class MyWorkPage {
   constructor(page) {
     this.page = page
   }
 
-  // Abre MyWork (o filter ajuda, mas NÃO dependemos dele)
   async open() {
     await this.page.goto(
       'https://rochalog.sd.cloud.invgate.net/mywork?filter=toAssign',
@@ -15,7 +15,6 @@ class MyWorkPage {
     console.log('🌐 MyWork aberto')
   }
 
-  // Pega o título da aba ativa de verdade
   async getActiveTabTitle() {
     return await this.page.evaluate(() => {
       const el = document.querySelector(
@@ -25,7 +24,6 @@ class MyWorkPage {
     })
   }
 
-  // ✅ ÚNICA forma que vamos usar: clique DOM + validação (com retries)
   async openUnassignedTab() {
     console.log('🎯 Indo para aba "Sem atribuir" (clique DOM + validação)...')
 
@@ -95,7 +93,6 @@ class MyWorkPage {
     )
   }
 
-  // Validação final
   async assertUnassignedLoaded() {
     console.log('🎯 Validando aba ativa...')
 
@@ -109,20 +106,13 @@ class MyWorkPage {
     console.log('✅ Confirmado: aba "Sem atribuir" está ativa')
   }
 
-  // =========================
-  // ✅ CARDS
-  // =========================
-
-  // Container pai (bom ter, mas não vamos depender 100%)
   cardsContainer() {
     return this.page.locator(
       '#page_content > div.content-columns > div.body-left > div > div.content > div'
     )
   }
 
-  // Cards (super robusto)
   cards() {
-    // Se o container mudar, ainda assim pegamos os cards na página inteira
     return this.page.locator('[id^="card_"]')
   }
 
@@ -147,7 +137,6 @@ class MyWorkPage {
     console.log('✅ Área de cards pronta (tem conteúdo)')
   }
 
-  // Scroll pra carregar todos os cards (SPA lazy load)
   async scrollAllCards() {
     console.log('⏳ Scrollando para carregar todos os cards...')
 
@@ -160,7 +149,6 @@ class MyWorkPage {
       console.log(`📦 Cards visíveis (loop ${i}): ${count}`)
 
       if (count === lastCount) {
-        // scroll extra e encerra se não mudar
         await this.page.evaluate(() => window.scrollBy(0, 2500))
         await this.page.waitForTimeout(900)
 
@@ -178,7 +166,6 @@ class MyWorkPage {
     console.log(`✅ Total de cards carregados: ${await this.cards().count()}`)
   }
 
-  // Lê todos os cards e extrai infos
   async readCards() {
     await this.waitCardsArea()
 
@@ -217,6 +204,7 @@ class MyWorkPage {
           : `https://rochalog.sd.cloud.invgate.net${href}`
         : null
 
+      // ✅ PARSE
       const parsed = parseCardData({
         idAttr,
         bodyText,
@@ -229,6 +217,19 @@ class MyWorkPage {
       if (seen.has(parsed.number)) continue
       seen.add(parsed.number)
 
+      // ✅ DB (MVP) — local ainda não vem do card => null por enquanto
+      try {
+        saveTicket({
+          ticket_id: String(parsed.number).replace('#', ''),
+          titulo: parsed.title || parsed.titulo || null,
+          local: parsed.local || null, // se parseCardData ainda não tiver isso, fica null
+          url: parsed.url || url || null,
+          collected_at: new Date().toISOString(),
+        })
+      } catch (e) {
+        console.log('⚠️ Falha ao salvar no DB:', e.message)
+      }
+
       items.push(parsed)
     }
 
@@ -240,7 +241,10 @@ class MyWorkPage {
     console.log('\n🧪 DEBUG DOM (página inteira):')
     console.log('div.card-body:', await this.page.locator('div.card-body').count())
     console.log('div.card-footer:', await this.page.locator('div.card-footer').count())
-    console.log('qualquer requests/show:', await this.page.locator('a[href*="requests/show"]').count())
+    console.log(
+      'qualquer requests/show:',
+      await this.page.locator('a[href*="requests/show"]').count()
+    )
     console.log('id^=card_:', await this.page.locator('[id^="card_"]').count())
   }
 }
