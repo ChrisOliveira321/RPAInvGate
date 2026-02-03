@@ -29,6 +29,11 @@ class TicketPage {
       .toUpperCase();
   }
 
+  _computeLegacyStatus(has_activity) {
+    // ✅ lógica antiga (como antes)
+    return has_activity ? 'em tratativa' : 'primeiro atendimento pendente';
+  }
+
   async _waitTicketHydrated() {
     try {
       await this.page.waitForFunction(
@@ -79,7 +84,9 @@ class TicketPage {
 
       const target = fold(labelText);
 
-      const nodes = Array.from(document.querySelectorAll('label, small, span, div, p'));
+      const nodes = Array.from(
+        document.querySelectorAll('label, small, span, div, p')
+      );
       const labelEl = nodes.find(el => fold(el.textContent) === target);
 
       if (!labelEl) return null;
@@ -100,7 +107,9 @@ class TicketPage {
           .map(x => norm(x.textContent))
           .filter(Boolean);
 
-        const candidate = kids.find(t => fold(t) !== target && t.length >= 2 && t.length <= 120);
+        const candidate = kids.find(
+          t => fold(t) !== target && t.length >= 2 && t.length <= 120
+        );
         if (candidate) return candidate;
       }
 
@@ -129,7 +138,9 @@ class TicketPage {
         .map(el => norm(el.textContent))
         .filter(t => t.length >= 3 && t.length <= 180);
 
-      const maybe = candidates.find(t => t.includes('#') || /SOLICITA(C|Ç)A(O|Õ)/i.test(t));
+      const maybe = candidates.find(
+        t => t.includes('#') || /SOLICITA(C|Ç)A(O|Õ)/i.test(t)
+      );
       return maybe || null;
     });
   }
@@ -146,11 +157,16 @@ class TicketPage {
           .replace(/[\u0300-\u036f]/g, '')
           .toUpperCase();
 
-      const candidates = Array.from(document.querySelectorAll('div, span, small, label'));
+      const candidates = Array.from(
+        document.querySelectorAll('div, span, small, label')
+      );
       const badge = candidates.find(el => fold(el.textContent) === 'DESCRICAO');
 
       if (badge) {
-        let box = badge.closest('section') || badge.closest('article') || badge.closest('div');
+        let box =
+          badge.closest('section') ||
+          badge.closest('article') ||
+          badge.closest('div');
         for (let i = 0; i < 4 && box; i++) {
           box = box.parentElement || box;
         }
@@ -160,7 +176,9 @@ class TicketPage {
         }
       }
 
-      const blocks = Array.from(document.querySelectorAll('section, article, div'))
+      const blocks = Array.from(
+        document.querySelectorAll('section, article, div')
+      )
         .map(el => norm(el.innerText || ''))
         .filter(t => t.length >= 40 && t.length <= 5000)
         .filter(t => fold(t).includes('DESCRICAO'));
@@ -172,7 +190,7 @@ class TicketPage {
   }
 
   // -----------------------------
-  // 2) TIMELINE
+  // 2) TIMELINE (sua heurística atual)
   // -----------------------------
   async getTimelineSummary() {
     const anchored = await this._getMainTicketRootHandle();
@@ -188,10 +206,13 @@ class TicketPage {
       let root = document.body;
       if (anchoredEl) {
         root = anchoredEl;
-        for (let i = 0; i < 6 && root?.parentElement; i++) root = root.parentElement;
+        for (let i = 0; i < 6 && root?.parentElement; i++)
+          root = root.parentElement;
       }
 
-      const rawBlocks = Array.from(root.querySelectorAll('div, li, article, section'))
+      const rawBlocks = Array.from(
+        root.querySelectorAll('div, li, article, section')
+      )
         .map(el => norm(el.innerText || ''))
         .filter(t => t.length >= 20 && t.length <= 2000)
         .filter(t => {
@@ -219,7 +240,8 @@ class TicketPage {
       });
 
       const hasAgentReply = events.some(e => e.kind === 'collaborator');
-      const lastCollaborator = [...events].reverse().find(e => e.kind === 'collaborator') || null;
+      const lastCollaborator =
+        [...events].reverse().find(e => e.kind === 'collaborator') || null;
 
       return {
         total: events.length,
@@ -229,6 +251,28 @@ class TicketPage {
         preview: events.slice(0, 6).map(e => e.text.slice(0, 220)),
       };
     }, anchored);
+  }
+
+  // -----------------------------
+  // 2.1) ACTIVITIES (DOM REAL)
+  // - pega lista de textos da activity-message__text
+  // -----------------------------
+  async getActivitiesTextList() {
+    const items = this.page.locator('.activity-message__message');
+    const count = await items.count();
+    const list = [];
+
+    for (let i = 0; i < count; i++) {
+      const txt = await items
+        .nth(i)
+        .locator('.activity-message__text')
+        .innerText()
+        .catch(() => null);
+
+      if (txt) list.push(this._norm(txt));
+    }
+
+    return list;
   }
 
   // -----------------------------
@@ -256,7 +300,9 @@ class TicketPage {
 
     return await this.page.evaluate(() => {
       const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-      const nodes = Array.from(document.querySelectorAll('div, span, p, small, label'))
+      const nodes = Array.from(
+        document.querySelectorAll('div, span, p, small, label')
+      )
         .map(el => norm(el.textContent))
         .filter(Boolean);
 
@@ -278,11 +324,37 @@ class TicketPage {
 
     const descriptionText = await this.getDescriptionText();
     const timeline = await this.getTimelineSummary();
+    const activitiesList = await this.getActivitiesTextList();
     const locationRaw = await this.getLocationRaw();
     const titleFromDetail = await this.getTitleBestEffort();
 
-    // regra: atividade = tem COLABORADOR
+    // regra: atividade = tem COLABORADOR (sua lógica antiga)
     const has_activity = timeline?.hasAgentReply ? 1 : 0;
+
+    // junta e normaliza activities (minúsculo)
+    const activitiesText = activitiesList.join('\n---\n');
+    const activitiesTextLower = (activitiesText || '').toLowerCase();
+
+    // =========================
+    // DEBUG — TODAS ATIVIDADES
+    // =========================
+    console.log('\n===== ACTIVITIES EXTRAIDAS =====');
+    if (!activitiesList.length) {
+      console.log('NENHUMA activity encontrada');
+    } else {
+      activitiesList.forEach((txt, i) => {
+        console.log(`\n[ACT ${i + 1}] ----------------`);
+        console.log(txt);
+      });
+    }
+    console.log('===== FIM ACTIVITIES =====\n');
+
+    // ✅ status: se tiver "worksystem" nas activities -> enviado
+    // senão, mantém a lógica antiga
+    let status = this._computeLegacyStatus(has_activity);
+    if (activitiesTextLower.includes('worksystem')) {
+      status = 'enviado para a worksystem';
+    }
 
     // normaliza ticket_id vindo da listagem (#123) ou já limpo (123)
     const ticket_id = ticketFromList.ticket_id
@@ -308,8 +380,12 @@ class TicketPage {
       hasAgentReply: Boolean(timeline?.hasAgentReply),
       hasAnyFollowUp: Boolean(timeline?.hasActivity),
 
-      // última msg do colaborador
+      // última msg do colabororador (heurística antiga)
       activityText: timeline?.lastCollaboratorText || null,
+
+      // ✅ activities reais (para salvar no banco)
+      activities_list: activitiesList,
+      activities_text: activitiesTextLower || null,
 
       // local literal
       locationRaw: locationRaw || null,
@@ -321,15 +397,21 @@ class TicketPage {
       // -----------------------
       // CAMPOS "DB-FRIENDLY"
       // -----------------------
-      // ✅ NOVO: descrição completa para persistir no SQLite
       description_text: this._norm(descriptionText) || null,
 
       ticket_id,
-      titulo: titleFromDetail || ticketFromList.titulo || ticketFromList.title || null,
+      titulo:
+        titleFromDetail ||
+        ticketFromList.titulo ||
+        ticketFromList.title ||
+        null,
       local: localForDb,
       url: ticketFromList.url || null,
       collected_at: nowIso,
       has_activity,
+
+      // ✅ novo status (minúsculo)
+      status,
     };
   }
 }
