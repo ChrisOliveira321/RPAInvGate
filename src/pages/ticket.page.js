@@ -292,7 +292,6 @@ class TicketPage {
       : null;
 
     // "local" pra DB: por enquanto vamos usar o RAW (melhor que null)
-    // se você depois quiser "normalizar" (ex: pegar só AZ9A), dá pra fazer em outra função
     const localForDb = locationRaw || ticketFromList.local || null;
 
     return {
@@ -322,6 +321,9 @@ class TicketPage {
       // -----------------------
       // CAMPOS "DB-FRIENDLY"
       // -----------------------
+      // ✅ NOVO: descrição completa para persistir no SQLite
+      description_text: this._norm(descriptionText) || null,
+
       ticket_id,
       titulo: titleFromDetail || ticketFromList.titulo || ticketFromList.title || null,
       local: localForDb,

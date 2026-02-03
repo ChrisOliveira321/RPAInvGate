@@ -18,15 +18,17 @@ ON CONFLICT(ticket_id) DO UPDATE SET
   local = COALESCE(tickets.local, NULLIF(excluded.local, ''))
 `);
 
-// ✅ DETALHE (grava status + marca details_collected)
+// ✅ DETALHE (grava status + descrição + marca details_collected)
 const upsertDetails = db.prepare(`
 INSERT INTO tickets (
   ticket_id, titulo, local, url, collected_at,
-  has_activity, status, details_collected, details_collected_at
+  has_activity, status, description_text,
+  details_collected, details_collected_at
 )
 VALUES (
   @ticket_id, @titulo, @local, @url, @collected_at,
-  @has_activity, @status, 1, @details_collected_at
+  @has_activity, @status, @description_text,
+  1, @details_collected_at
 )
 ON CONFLICT(ticket_id) DO UPDATE SET
   titulo = COALESCE(excluded.titulo, tickets.titulo),
@@ -35,6 +37,7 @@ ON CONFLICT(ticket_id) DO UPDATE SET
   collected_at = excluded.collected_at,
   has_activity = excluded.has_activity,
   status = excluded.status,
+  description_text = COALESCE(excluded.description_text, tickets.description_text),
   details_collected = 1,
   details_collected_at = excluded.details_collected_at
 `);
@@ -66,6 +69,8 @@ function saveTicketDetails(t) {
     collected_at: t.collected_at ?? new Date().toISOString(),
     has_activity,
     status,
+    // aceita tanto description_text quanto descriptionText (pra não quebrar)
+    description_text: t.description_text ?? t.descriptionText ?? null,
     details_collected_at: new Date().toISOString(),
   });
 }
