@@ -1,3 +1,5 @@
+const { classifyCftvIssue } = require('./src/rules/cftvClassifier');
+
 // index.js
 process.on('unhandledRejection', err => {
   console.error('🔥 UNHANDLED REJECTION:', err);
@@ -58,6 +60,18 @@ const { saveTicketDetails } = require('./src/db/ticketRepo');
 
     const full = await ticketPage.getTicketInsights(t);
 
+    // ✅ classifica CFTV e extrai camera_id
+    const issue = classifyCftvIssue({
+      title: full.titulo ?? full.title,
+      descriptionText: full.description_text ?? full.descriptionText,
+      activityText: full.activityText,
+    });
+
+    full.issue_type = issue.issueType;
+    full.camera_id = issue.cameraId;
+
+    console.log(`🎯 Issue: ${full.issue_type} | 🎥 Camera: ${full.camera_id ?? 'N/D'}`);
+
     // ✅ salva detalhe (profundo)
     try {
       saveTicketDetails(full);
@@ -68,18 +82,20 @@ const { saveTicketDetails } = require('./src/db/ticketRepo');
     // logs seus (mantidos)
     const hasActivity = Boolean(full.hasAnyFollowUp);
 
-    console.log(
-      `🆔 #${t.number} | Atividade: ${hasActivity ? 'SIM' : 'NÃO'}`
-    );
+    console.log(`🆔 #${t.number} | Atividade: ${hasActivity ? 'SIM' : 'NÃO'}`);
 
     console.log(
-      `📝 Descrição: ${(full.descriptionText || '').slice(0, 160)}${(full.descriptionText || '').length > 160 ? '…' : ''}`
+      `📝 Descrição: ${(full.descriptionText || '').slice(0, 160)}${
+        (full.descriptionText || '').length > 160 ? '…' : ''
+      }`
     );
 
     console.log(`📍 Local (RAW): ${full.locationRaw ?? 'N/D'}`);
 
     console.log(
-      `🧑‍💼 Atividade (última): ${(full.activityText || 'N/D').slice(0, 160)}${(full.activityText || '').length > 160 ? '…' : ''}`
+      `🧑‍💼 Atividade (última): ${(full.activityText || 'N/D').slice(0, 160)}${
+        (full.activityText || '').length > 160 ? '…' : ''
+      }`
     );
 
     console.log(`🧠 agente: ${full.hasAgentReply ? 'SIM' : 'NÃO'}`);

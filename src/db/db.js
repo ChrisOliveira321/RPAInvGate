@@ -15,8 +15,12 @@ CREATE TABLE IF NOT EXISTS tickets (
   -- status calculado do ticket (seu repo já usa)
   status TEXT,
 
-  -- descrição completa do detalhe (nova)
+  -- descrição completa do detalhe
   description_text TEXT,
+
+  -- ✅ classificação CFTV (nova etapa)
+  issue_type TEXT,
+  camera_id TEXT,
 
   details_collected INTEGER NOT NULL DEFAULT 0,
   details_collected_at TEXT
@@ -50,6 +54,17 @@ ensureColumn(
 ensureColumn(
   'description_text',
   `ALTER TABLE tickets ADD COLUMN description_text TEXT`
+);
+
+// ✅ novas colunas
+ensureColumn(
+  'issue_type',
+  `ALTER TABLE tickets ADD COLUMN issue_type TEXT`
+);
+
+ensureColumn(
+  'camera_id',
+  `ALTER TABLE tickets ADD COLUMN camera_id TEXT`
 );
 
 ensureColumn(

@@ -2,11 +2,10 @@
 const db = require('./db');
 
 function computeStatus(has_activity) {
-  // 0/1
   return has_activity ? 'Em Tratativa' : 'Primeiro Atendimento Pendente';
 }
 
-// ✅ TRIAGEM (NÃO grava status)
+// ✅ TRIAGEM
 const upsertTriage = db.prepare(`
 INSERT INTO tickets (ticket_id, titulo, local, url, collected_at, has_activity)
 VALUES (@ticket_id, @titulo, @local, @url, @collected_at, @has_activity)
@@ -18,16 +17,20 @@ ON CONFLICT(ticket_id) DO UPDATE SET
   local = COALESCE(tickets.local, NULLIF(excluded.local, ''))
 `);
 
-// ✅ DETALHE (grava status + descrição + marca details_collected)
+// ✅ DETALHE
 const upsertDetails = db.prepare(`
 INSERT INTO tickets (
   ticket_id, titulo, local, url, collected_at,
-  has_activity, status, description_text,
+  has_activity, status,
+  description_text,
+  issue_type, camera_id,
   details_collected, details_collected_at
 )
 VALUES (
   @ticket_id, @titulo, @local, @url, @collected_at,
-  @has_activity, @status, @description_text,
+  @has_activity, @status,
+  @description_text,
+  @issue_type, @camera_id,
   1, @details_collected_at
 )
 ON CONFLICT(ticket_id) DO UPDATE SET
@@ -38,6 +41,8 @@ ON CONFLICT(ticket_id) DO UPDATE SET
   has_activity = excluded.has_activity,
   status = excluded.status,
   description_text = COALESCE(excluded.description_text, tickets.description_text),
+  issue_type = COALESCE(excluded.issue_type, tickets.issue_type),
+  camera_id  = COALESCE(excluded.camera_id, tickets.camera_id),
   details_collected = 1,
   details_collected_at = excluded.details_collected_at
 `);
@@ -63,14 +68,18 @@ function saveTicketDetails(t) {
 
   upsertDetails.run({
     ticket_id: String(t.ticket_id),
-    titulo: t.titulo ?? null,
+    titulo: t.titulo ?? t.title ?? null,
     local: t.local ?? null,
     url: t.url ?? null,
     collected_at: t.collected_at ?? new Date().toISOString(),
     has_activity,
     status,
-    // aceita tanto description_text quanto descriptionText (pra não quebrar)
+
     description_text: t.description_text ?? t.descriptionText ?? null,
+
+    issue_type: t.issue_type ?? null,
+    camera_id: t.camera_id ?? null,
+
     details_collected_at: new Date().toISOString(),
   });
 }
