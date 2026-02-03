@@ -14,10 +14,22 @@ function hasAny(text, words) {
 }
 
 function extractCameraId(text) {
-  // pega CF 114, CF114, CF-114, CF:114
-  const m = text.match(/\bcf\s*[-#: ]?\s*(\d{1,5})\b/);
-  if (!m) return null;
-  return `CF ${m[1]}`;
+  if (!text) return null;
+
+  // 1) CF 114, CF114, CF-114, CF:114, CF#114
+  let m = text.match(/\bcf\s*[-#: ]?\s*(\d{1,5})\b/i);
+  if (m) return `CF ${m[1]}`;
+
+  // 2) camera 114, câmera 114, cam 114 (normalizado remove acento)
+  // aceita separadores: espaço, -, :, # e também "n°"/"no"/"num" (bem comum)
+  m = text.match(/\b(cam(era)?|camera)\s*(n|no|nº|num)?\s*[-#: ]?\s*(\d{1,5})\b/i);
+  if (m) return `CF ${m[4]}`;
+
+  // 3) fallback opcional: "cftv 114"
+  m = text.match(/\bcftv\s*[-#: ]?\s*(\d{1,5})\b/i);
+  if (m) return `CF ${m[1]}`;
+
+  return null;
 }
 
 function classifyCftvIssue({ title, descriptionText, activityText }) {
@@ -27,13 +39,13 @@ function classifyCftvIssue({ title, descriptionText, activityText }) {
       .join(' ')
   );
 
+  // ✅ independente da classificação, tenta extrair sempre
   const cameraId = extractCameraId(blob);
 
   // 🔴 OFFLINE
   if (hasAny(blob, [
     'offline',
     'off line',
-    'indisponivel',
     'indisponivel',
     'caiu',
     'sem sinal',
@@ -50,7 +62,6 @@ function classifyCftvIssue({ title, descriptionText, activityText }) {
     'limpar',
     'suja',
     'sujo',
-    'embaçada',
     'embacada',
     'lente suja',
     'imagem suja'
@@ -62,7 +73,6 @@ function classifyCftvIssue({ title, descriptionText, activityText }) {
   if (hasAny(blob, [
     'instalar',
     'instalacao',
-    'instalação',
     'nova camera',
     'nova cam',
     'colocar camera',
@@ -74,10 +84,8 @@ function classifyCftvIssue({ title, descriptionText, activityText }) {
   // 🎯 POSICIONAMENTO
   if (hasAny(blob, [
     'fora de posicao',
-    'fora de posição',
     'fora de posicionamento',
     'angulo',
-    'ângulo',
     'virar camera',
     'ajustar camera',
     'reposicionar'
