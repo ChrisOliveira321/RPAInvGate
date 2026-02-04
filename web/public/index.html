@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RPA InvGate — Painel</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 18px; }
+    h1 { margin: 0 0 12px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin: 10px 0 14px; }
+    input, select { padding:8px; font-size:14px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { border-bottom:1px solid #ddd; padding:10px; text-align:left; vertical-align:top; }
+    th { background:#f6f6f6; position:sticky; top:0; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; font-size:12px; }
+    .muted { color:#666; font-size:12px; }
+    a { color:#0b5bd3; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .right { margin-left:auto; }
+    .small { font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>RPA InvGate — Painel</h1>
+  <div class="muted">Mostrando até 200 tickets mais recentes do banco (SQLite).</div>
+
+  <div class="row">
+    <input id="q" placeholder="Buscar: ticket, câmera, local, issue..." size="42" />
+    <label class="small"><input type="checkbox" id="onlyCftv" /> Só CFTV (issue_type CF_*)</label>
+    <select id="status">
+      <option value="">Status (todos)</option>
+    </select>
+    <button id="refresh">Atualizar</button>
+    <div class="right muted" id="count"></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Ticket</th>
+        <th>Local</th>
+        <th>Status</th>
+        <th>CFTV</th>
+        <th>Coletado</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  async function loadStatuses() {
+    const res = await fetch('/api/statuses');
+    const data = await res.json();
+    if (!data.ok) return;
+
+    const sel = $('status');
+    for (const s of data.statuses) {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      sel.appendChild(opt);
+    }
+  }
+
+  function fmtDate(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('pt-BR');
+    } catch { return iso || ''; }
+  }
+
+  async function loadTickets() {
+    const q = $('q').value.trim();
+    const onlyCftv = $('onlyCftv').checked ? '1' : '';
+    const status = $('status').value;
+
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (onlyCftv) params.set('onlyCftv', '1');
+    if (status) params.set('status', status);
+
+    const res = await fetch('/api/tickets?' + params.toString());
+    const data = await res.json();
+    if (!data.ok) return;
+
+    const rows = data.rows || [];
+    $('count').textContent = `${rows.length} resultado(s)`;
+
+    const tbody = $('tbody');
+    tbody.innerHTML = '';
+
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+
+      const ticketCell = document.createElement('td');
+      ticketCell.innerHTML = `<div><strong>#${r.ticket_id}</strong></div>
+        <div class="muted"><a href="${r.url}" target="_blank" rel="noopener">Abrir</a></div>`;
+      tr.appendChild(ticketCell);
+
+      const localCell = document.createElement('td');
+      localCell.textContent = r.local || '';
+      tr.appendChild(localCell);
+
+      const statusCell = document.createElement('td');
+      statusCell.innerHTML = r.status ? `<span class="pill">${r.status}</span>` : `<span class="muted">N/D</span>`;
+      tr.appendChild(statusCell);
+
+      const cftvCell = document.createElement('td');
+      const issue = r.issue_type || '';
+      const cam = r.camera_id || '';
+      cftvCell.innerHTML = `
+        <div>${issue ? `<span class="pill">${issue}</span>` : `<span class="muted">—</span>`}</div>
+        <div class="muted">${cam || ''}</div>
+      `;
+      tr.appendChild(cftvCell);
+
+      const dtCell = document.createElement('td');
+      dtCell.innerHTML = `<div>${fmtDate(r.collected_at)}</div>
+        <div class="muted">agente: ${r.has_activity ? 'sim' : 'não'}</div>`;
+      tr.appendChild(dtCell);
+
+      tbody.appendChild(tr);
+    }
+  }
+
+  // eventos
+  $('refresh').addEventListener('click', loadTickets);
+  $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadTickets(); });
+  $('onlyCftv').addEventListener('change', loadTickets);
+  $('status').addEventListener('change', loadTickets);
+
+  // init
+  loadStatuses().then(loadTickets);
+</script>
+</body>
+</html>
